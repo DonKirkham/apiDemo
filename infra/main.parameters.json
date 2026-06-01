@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "functionAppName": {
+      "value": "api-demo2-func"
+    },
+    "storageAccountName": {
+      "value": "apidemostorage0001"
+    },
+    "sharePointClientId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "sharePointClientSecret": {
+      "value": "replace-me"
+    },
+    "tenantId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "sharePointResource": {
+      "value": "https://contoso.sharepoint.com/.default"
+    },
+    "allowedCallerDomains": {
+      "value": "https://contoso.sharepoint.com"
+    },
+    "entraAudience": {
+      "value": "api://your-api-app-id"
+    },
+    "allowedClientAppIds": {
+      "value": "11111111-1111-1111-1111-111111111111"
+    }
+  }
+}
