@@ -1,0 +1,20 @@
+{
+  "name": "api-demo2",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Azure Functions demo API for SPFx elevated SharePoint list access",
+  "main": "src/functions/*.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "func start",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.7.1",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.2.0"
+  }
+}
