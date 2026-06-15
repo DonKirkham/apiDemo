@@ -29,6 +29,10 @@ param entraAudience string
 @description('Comma-separated client app ids allowed to call Entra endpoint')
 param allowedClientAppIds string = ''
 
+@secure()
+@description('PEM (certificate + private key) for SharePoint app-only certificate auth. Leave empty to use the client secret instead.')
+param sharePointCertPem string = ''
+
 resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -107,7 +111,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     }
     siteConfig: {
       minTlsVersion: '1.2'
-      appSettings: [
+      appSettings: concat([
         {
           name: 'AzureWebJobsStorage'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
@@ -144,7 +148,12 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'ALLOWED_CLIENT_APP_IDS'
           value: allowedClientAppIds
         }
-      ]
+      ], empty(sharePointCertPem) ? [] : [
+        {
+          name: 'SHAREPOINT_CERT_PEM'
+          value: sharePointCertPem
+        }
+      ])
     }
   }
 }
