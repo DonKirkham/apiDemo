@@ -32,13 +32,31 @@ Set these app settings locally (`local.settings.json`) or in Azure:
 
 - `AZURE_TENANT_ID`
 - `SHAREPOINT_APP_CLIENT_ID`
-- `SHAREPOINT_APP_CLIENT_SECRET`
+- **App-only credential — one of:**
+  - `SHAREPOINT_CERT_PEM` (**recommended**): full PEM (private key + certificate). SharePoint REST only honors **certificate-based** Entra app-only tokens; a client secret is rejected with `401 Unsupported app only token`.
+  - `SHAREPOINT_APP_CLIENT_SECRET`: works for token acquisition but the SharePoint call will fail — kept only as a fallback / for demonstration.
 - `SHAREPOINT_RESOURCE` (example: `https://contoso.sharepoint.com/.default`)
 - `ALLOWED_CALLER_DOMAINS` (comma-separated origins)
 - `ENTRA_AUDIENCE` (your API App ID URI)
 - `ALLOWED_CLIENT_APP_IDS` (optional comma-separated app IDs)
 
 `local.settings.sample.json` is included as a template.
+
+### App registration permissions
+
+The app registration (`SHAREPOINT_APP_CLIENT_ID`) needs a SharePoint Online **application**
+permission with admin consent:
+
+- **`Sites.ReadWrite.All`** — sufficient for this API, which **creates items in an existing list**.
+- The target list must already exist. Creating lists/site structure would require the
+  higher `Sites.Manage.All` (or `Sites.FullControl.All`), which this API intentionally does not need.
+
+Generate and upload the certificate in one step:
+
+```bash
+az ad app credential reset --id <SHAREPOINT_APP_CLIENT_ID> --create-cert --append
+# put the contents of the emitted .pem file into SHAREPOINT_CERT_PEM
+```
 
 ## Run locally
 

@@ -6,7 +6,8 @@
     "ALLOWED_CALLER_DOMAINS": "https://contoso.sharepoint.com,https://contoso-admin.sharepoint.com",
     "AZURE_TENANT_ID": "00000000-0000-0000-0000-000000000000",
     "SHAREPOINT_APP_CLIENT_ID": "00000000-0000-0000-0000-000000000000",
-    "SHAREPOINT_APP_CLIENT_SECRET": "replace-with-secret",
+    "SHAREPOINT_APP_CLIENT_SECRET": "replace-with-secret-OR-use-cert-below",
+    "SHAREPOINT_CERT_PEM": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
     "SHAREPOINT_RESOURCE": "https://contoso.sharepoint.com/.default",
     "ENTRA_AUDIENCE": "api://your-api-app-id",
     "ALLOWED_CLIENT_APP_IDS": "11111111-1111-1111-1111-111111111111"
