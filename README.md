@@ -1,4 +1,4 @@
-# apiDemo2
+# apiDemo
 
 Demo Azure Functions API used by SPFx for elevated SharePoint list operations.
 

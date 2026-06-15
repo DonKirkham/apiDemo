@@ -1,5 +1,5 @@
 {
-  "name": "api-demo2",
+  "name": "api-demo",
   "version": "1.0.0",
   "private": true,
   "description": "Azure Functions demo API for SPFx elevated SharePoint list access",
