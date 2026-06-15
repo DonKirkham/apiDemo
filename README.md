@@ -55,12 +55,31 @@ Set these app settings locally (`local.settings.json`) or in Azure:
    npm start
    ```
 
+## Deploy from your machine
+
+```bash
+# 1. Provision/update infrastructure
+az deployment group create \
+  --resource-group <rg> \
+  --template-file infra/main.bicep \
+  --parameters location=<region> functionAppName=<name> storageAccountName=<name> ...
+
+# 2. Publish the code (remote build is REQUIRED)
+func azure functionapp publish <functionAppName> --javascript --build remote
+```
+
+> **`--build remote` is required.** `.funcignore` excludes `node_modules`, so dependencies
+> are installed server-side by Oryx. The Flex Consumption SKU does **not** support the
+> `SCM_DO_BUILD_DURING_DEPLOYMENT` app setting, so the build must be requested at deploy
+> time via `--build remote` (CLI) or `remote-build: true` (GitHub Actions). A plain publish
+> will deploy without dependencies and register zero functions.
+
 ## Automated Azure deployment
 
 Infrastructure and deployment automation files are included:
 
-- `infra/main.bicep` – deploys storage account, consumption plan, Linux Function App, and app settings
-- `.github/workflows/deploy.yml` – provisions/updates Azure resources and deploys the function app on push to `main` (or manually)
+- `infra/main.bicep` – deploys storage account, Flex Consumption plan (Node 22), Linux Function App, App Insights, and app settings
+- `.github/workflows/deploy.yml` – provisions/updates Azure resources and deploys the function app (remote build) on manual dispatch
 
 ### GitHub configuration for workflow
 
