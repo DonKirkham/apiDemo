@@ -47,13 +47,23 @@ resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${functionAppName}-plan'
   location: location
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
+    name: 'FC1'
+    tier: 'FlexConsumption'
   }
   kind: 'functionapp'
   properties: {
     reserved: true
   }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: 'app-package'
 }
 
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
@@ -75,25 +85,32 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   properties: {
     httpsOnly: true
     serverFarmId: hostingPlan.id
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storage.properties.primaryEndpoints.blob}${deploymentContainer.name}'
+          authentication: {
+            type: 'StorageAccountConnectionString'
+            storageAccountConnectionStringName: 'AzureWebJobsStorage'
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 40
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: 'node'
+        version: '22'
+      }
+    }
     siteConfig: {
-      linuxFxVersion: 'Node|20'
       minTlsVersion: '1.2'
       appSettings: [
         {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'node'
-        }
-        {
-          name: 'WEBSITE_RUN_FROM_PACKAGE'
-          value: '1'
-        }
-        {
           name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(storage.id, storage.apiVersion).keys[0].value}'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
