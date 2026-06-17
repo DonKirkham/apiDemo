@@ -1,6 +1,19 @@
 name: Deploy Azure Function
 
+# Deploys application code only (no infra). Runs automatically on pushes to main
+# that touch the app, behind a build + test gate so broken code never ships.
+# Infrastructure is provisioned separately and manually by infra.yml.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'host.json'
+      - 'tsconfig.json'
+      - '.funcignore'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 permissions:
@@ -10,16 +23,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-      LOCATION: ${{ vars.AZURE_LOCATION }}
-      FUNCTION_APP_NAME: ${{ vars.FUNCTION_APP_NAME }}
-      STORAGE_ACCOUNT_NAME: ${{ vars.STORAGE_ACCOUNT_NAME }}
-      SHAREPOINT_RESOURCE: ${{ vars.SHAREPOINT_RESOURCE }}
-      ALLOWED_CALLER_DOMAINS: ${{ vars.ALLOWED_CALLER_DOMAINS }}
-      ENTRA_AUDIENCE: ${{ vars.ENTRA_AUDIENCE }}
-      ALLOWED_CLIENT_APP_IDS: ${{ vars.ALLOWED_CLIENT_APP_IDS }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,9 +31,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
+
+      # Gate: fail the deploy before it starts if the code doesn't compile or
+      # the tests don't pass. (Oryx rebuilds server-side via remote-build below;
+      # this step is purely a safety check.)
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
 
       - name: Azure login
         uses: azure/login@v2
@@ -39,28 +52,9 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Ensure resource group
-        run: az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
-
-      - name: Deploy infrastructure
-        run: |
-          az deployment group create \
-            --resource-group "$RESOURCE_GROUP" \
-            --template-file infra/main.bicep \
-            --parameters \
-              functionAppName="$FUNCTION_APP_NAME" \
-              storageAccountName="$STORAGE_ACCOUNT_NAME" \
-              sharePointClientId="${{ secrets.SHAREPOINT_APP_CLIENT_ID }}" \
-              sharePointClientSecret="${{ secrets.SHAREPOINT_APP_CLIENT_SECRET }}" \
-              tenantId="${{ secrets.AZURE_TENANT_ID }}" \
-              sharePointResource="$SHAREPOINT_RESOURCE" \
-              allowedCallerDomains="$ALLOWED_CALLER_DOMAINS" \
-              entraAudience="$ENTRA_AUDIENCE" \
-              allowedClientAppIds="$ALLOWED_CLIENT_APP_IDS"
-
       - name: Deploy function package
         uses: Azure/functions-action@v1
         with:
-          app-name: ${{ env.FUNCTION_APP_NAME }}
+          app-name: ${{ vars.FUNCTION_APP_NAME }}
           package: '.'
           remote-build: true

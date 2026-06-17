@@ -1,0 +1,55 @@
+name: Provision Infrastructure
+
+# Manual only. Infrastructure rarely changes, and re-running the bicep deployment
+# touches the live Function App's settings, so it is intentionally NOT triggered
+# by push. Run this from the Actions tab when infra/main.bicep or its parameters
+# change. Application code is deployed separately by deploy.yml on push.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      LOCATION: ${{ vars.AZURE_LOCATION }}
+      FUNCTION_APP_NAME: ${{ vars.FUNCTION_APP_NAME }}
+      STORAGE_ACCOUNT_NAME: ${{ vars.STORAGE_ACCOUNT_NAME }}
+      SHAREPOINT_RESOURCE: ${{ vars.SHAREPOINT_RESOURCE }}
+      ALLOWED_CALLER_DOMAINS: ${{ vars.ALLOWED_CALLER_DOMAINS }}
+      ENTRA_AUDIENCE: ${{ vars.ENTRA_AUDIENCE }}
+      ALLOWED_CLIENT_APP_IDS: ${{ vars.ALLOWED_CLIENT_APP_IDS }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group
+        run: az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
+
+      - name: Deploy infrastructure
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters \
+              functionAppName="$FUNCTION_APP_NAME" \
+              storageAccountName="$STORAGE_ACCOUNT_NAME" \
+              sharePointClientId="${{ secrets.SHAREPOINT_APP_CLIENT_ID }}" \
+              sharePointClientSecret="${{ secrets.SHAREPOINT_APP_CLIENT_SECRET }}" \
+              tenantId="${{ secrets.AZURE_TENANT_ID }}" \
+              sharePointResource="$SHAREPOINT_RESOURCE" \
+              allowedCallerDomains="$ALLOWED_CALLER_DOMAINS" \
+              entraAudience="$ENTRA_AUDIENCE" \
+              allowedClientAppIds="$ALLOWED_CLIENT_APP_IDS"
