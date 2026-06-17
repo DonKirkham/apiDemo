@@ -9,6 +9,8 @@
     "SHAREPOINT_APP_CLIENT_SECRET": "replace-with-secret-OR-use-cert-below",
     "SHAREPOINT_CERT_PEM": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
     "SHAREPOINT_RESOURCE": "https://contoso.sharepoint.com/.default",
+    "SHAREPOINT_SITE_URL": "https://contoso.sharepoint.com/sites/Finance",
+    "SHAREPOINT_LIST_TITLE": "Requests",
     "ENTRA_AUDIENCE": "api://your-api-app-id",
     "ALLOWED_CLIENT_APP_IDS": "11111111-1111-1111-1111-111111111111"
   }

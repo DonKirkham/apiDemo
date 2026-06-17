@@ -2,19 +2,33 @@
   "name": "api-demo",
   "version": "1.0.0",
   "private": true,
-  "description": "Azure Functions demo API for SPFx elevated SharePoint list access",
-  "main": "src/functions/*.js",
-  "type": "commonjs",
+  "description": "Azure Functions demo API for SPFx elevated SharePoint list access (TypeScript + PnPjs)",
+  "main": "dist/functions/*.js",
+  "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prestart": "npm run build",
     "start": "func start",
-    "test": "node --test"
+    "test": "node --import tsx --test \"tests/**/*.test.ts\""
   },
   "dependencies": {
     "@azure/functions": "^4.7.1",
+    "@azure/identity": "^4.13.1",
+    "@pnp/azidjsclient": "^4.20.0",
+    "@pnp/nodejs": "^4.20.0",
+    "@pnp/sp": "^4.20.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0"
+  },
+  "devDependencies": {
+    "azurite": "^3.35.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.9.3",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
   }
 }

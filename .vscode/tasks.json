@@ -7,18 +7,43 @@
 			"command": "host start",
 			"problemMatcher": "$func-node-watch",
 			"isBackground": true,
-			"dependsOn": "npm install (functions)"
+			"dependsOn": [
+				"npm build (functions)",
+				"azurite"
+			]
+		},
+		{
+			"type": "shell",
+			"label": "azurite",
+			"command": "npx azurite --silent --location ./.azurite --debug ./.azurite/debug.log",
+			"isBackground": true,
+			"problemMatcher": {
+				"pattern": [
+					{
+						"regexp": ".",
+						"file": 1,
+						"location": 2,
+						"message": 3
+					}
+				],
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "^.*Azurite.*$",
+					"endsPattern": "^.*Azurite Table service is successfully listening.*$"
+				}
+			}
+		},
+		{
+			"type": "shell",
+			"label": "npm build (functions)",
+			"command": "npm run build",
+			"dependsOn": "npm install (functions)",
+			"problemMatcher": "$tsc"
 		},
 		{
 			"type": "shell",
 			"label": "npm install (functions)",
 			"command": "npm install"
-		},
-		{
-			"type": "shell",
-			"label": "npm prune (functions)",
-			"command": "npm prune --production",
-			"problemMatcher": []
 		}
 	]
 }

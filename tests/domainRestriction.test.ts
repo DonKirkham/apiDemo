@@ -1,20 +1,21 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { HttpRequest } from '@azure/functions';
 
 process.env.ALLOWED_CALLER_DOMAINS = 'https://contoso.sharepoint.com';
 
-const { ensureAllowedDomain } = require('../src/security/domainRestriction');
+const { ensureAllowedDomain } = await import('../src/security/domainRestriction.js');
 
-function buildRequest({ origin, referer }) {
+function buildRequest({ origin, referer }: { origin?: string; referer?: string }): HttpRequest {
   return {
     headers: {
-      get(name) {
+      get(name: string): string | null {
         if (name === 'origin') return origin || null;
         if (name === 'referer') return referer || null;
         return null;
       }
     }
-  };
+  } as unknown as HttpRequest;
 }
 
 test('allows requests from configured origin header', () => {
