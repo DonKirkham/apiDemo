@@ -33,6 +33,11 @@ param allowedClientAppIds string = ''
 @description('PEM (certificate + private key) for SharePoint app-only certificate auth. Leave empty to use the client secret instead.')
 param sharePointCertPem string = ''
 
+@description('Always Ready (pre-warmed) instances kept running to avoid cold starts. 1 keeps a single instance warm; 0 disables and scales fully to zero. Always Ready instances are billed continuously, even when idle.')
+@minValue(0)
+@maxValue(40)
+param alwaysReadyInstances int = 1
+
 resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -103,6 +108,14 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       scaleAndConcurrency: {
         maximumInstanceCount: 40
         instanceMemoryMB: 2048
+        // Keep N instances pre-warmed so HTTP calls skip cold start. 'http' covers
+        // all HTTP-triggered functions; empty array (param 0) scales fully to zero.
+        alwaysReady: alwaysReadyInstances > 0 ? [
+          {
+            name: 'http'
+            instanceCount: alwaysReadyInstances
+          }
+        ] : []
       }
       runtime: {
         name: 'node'
