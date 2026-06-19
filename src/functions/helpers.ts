@@ -4,8 +4,7 @@ import {
   createSharePointListItem,
   readSharePointListItems,
   updateSharePointListItem,
-  deleteSharePointListItem,
-  ODataOptions
+  deleteSharePointListItem
 } from '../sharepointClient.js';
 import { httpError, statusOf } from '../httpError.js';
 
@@ -64,39 +63,6 @@ export function resolveTarget(
   return { siteUrl, listTitle, itemId };
 }
 
-// Translate the supported OData query params into PnPjs query options.
-export function parseODataOptions(query: URLSearchParams): ODataOptions {
-  const options: ODataOptions = {};
-
-  const select = query.get('$select');
-  if (select) {
-    options.select = select.split(',').map((part) => part.trim()).filter(Boolean);
-  }
-
-  const expand = query.get('$expand');
-  if (expand) {
-    options.expand = expand.split(',').map((part) => part.trim()).filter(Boolean);
-  }
-
-  const filter = query.get('$filter');
-  if (filter) {
-    options.filter = filter;
-  }
-
-  const top = query.get('$top');
-  if (top && !Number.isNaN(Number(top))) {
-    options.top = Number(top);
-  }
-
-  const orderby = query.get('$orderby');
-  if (orderby) {
-    const [field, direction] = orderby.split(/\s+/);
-    options.orderby = { field, ascending: (direction || 'asc').toLowerCase() !== 'desc' };
-  }
-
-  return options;
-}
-
 // Dispatches one CRUD operation based on the HTTP method. Shared by every
 // auth-protected endpoint so the create/read/update/delete behavior stays
 // identical regardless of how the caller was authorized.
@@ -120,7 +86,7 @@ export async function dispatchCrudOperation(request: HttpRequest): Promise<CrudR
         siteUrl,
         listTitle,
         itemId,
-        odata: parseODataOptions(request.query)
+        query: request.query
       });
       return { status: 200, operation: 'read', item };
     }

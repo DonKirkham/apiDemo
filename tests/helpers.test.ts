@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { HttpRequest } from '@azure/functions';
 
-const { resolveTarget, parseODataOptions } = await import('../src/functions/helpers.js');
+const { resolveTarget } = await import('../src/functions/helpers.js');
 
 function fakeRequest({
   query = {},
@@ -45,38 +45,4 @@ test('resolveTarget falls back to the query string', () => {
 
 test('resolveTarget throws when siteUrl or listTitle is missing', () => {
   assert.throws(() => resolveTarget(fakeRequest(), {}), /siteUrl and listTitle are required/);
-});
-
-test('parseODataOptions maps $select, $top, $filter, and $orderby', () => {
-  const options = parseODataOptions(
-    new URLSearchParams({
-      $select: 'Id, Title ,Status',
-      $top: '50',
-      $filter: "Status eq 'New'",
-      $orderby: 'Created desc'
-    })
-  );
-
-  assert.deepEqual(options, {
-    select: ['Id', 'Title', 'Status'],
-    top: 50,
-    filter: "Status eq 'New'",
-    orderby: { field: 'Created', ascending: false }
-  });
-});
-
-test('parseODataOptions maps $expand into a trimmed list', () => {
-  const options = parseODataOptions(
-    new URLSearchParams({ $expand: 'Speaker, Author ' })
-  );
-  assert.deepEqual(options.expand, ['Speaker', 'Author']);
-});
-
-test('parseODataOptions defaults $orderby direction to ascending', () => {
-  const options = parseODataOptions(new URLSearchParams({ $orderby: 'Title' }));
-  assert.deepEqual(options.orderby, { field: 'Title', ascending: true });
-});
-
-test('parseODataOptions returns an empty object when no params are present', () => {
-  assert.deepEqual(parseODataOptions(new URLSearchParams()), {});
 });

@@ -88,45 +88,35 @@ export async function createSharePointListItem({
   return getSp(siteUrl).web.lists.getByTitle(listTitle).items.add(fields);
 }
 
-// Read a single item when `itemId` is provided, otherwise list items. `odata`
-// carries optional query options (select/filter/top/orderby) parsed from the
-// request, applied the PnPjs way.
+// Read a single item when `itemId` is provided, otherwise list items. Any OData
+// system query options on the request ($select, $expand, $filter, $top,
+// $orderby, …) are passed straight through to SharePoint rather than parsed and
+// re-applied — the caller owns the query. PnPjs's fluent builders just set these
+// same `$` params under the hood, so forwarding them is equivalent.
 export async function readSharePointListItems({
   siteUrl,
   listTitle,
   itemId,
-  odata
-}: ListItemTarget & { itemId?: string | number; odata?: ODataOptions }): Promise<unknown> {
+  query
+}: ListItemTarget & { itemId?: string | number; query?: URLSearchParams }): Promise<unknown> {
   const items = getSp(siteUrl).web.lists.getByTitle(listTitle).items;
+  const target =
+    itemId !== undefined && itemId !== null && itemId !== ''
+      ? items.getById(Number(itemId))
+      : items;
 
-  if (itemId !== undefined && itemId !== null && itemId !== '') {
-    let query = items.getById(Number(itemId));
-    if (odata?.select?.length) {
-      query = query.select(...odata.select);
+  // Forward every OData system query option verbatim. (On a single-item read
+  // SharePoint only honors $select/$expand; collection-only options are simply
+  // ignored there.)
+  if (query) {
+    for (const [key, value] of query) {
+      if (key.startsWith('$')) {
+        target.query.set(key, value);
+      }
     }
-    if (odata?.expand?.length) {
-      query = query.expand(...odata.expand);
-    }
-    return query();
   }
 
-  let query = items;
-  if (odata?.select?.length) {
-    query = query.select(...odata.select);
-  }
-  if (odata?.expand?.length) {
-    query = query.expand(...odata.expand);
-  }
-  if (odata?.filter) {
-    query = query.filter(odata.filter);
-  }
-  if (odata?.orderby) {
-    query = query.orderBy(odata.orderby.field, odata.orderby.ascending);
-  }
-  if (odata?.top) {
-    query = query.top(odata.top);
-  }
-  return query();
+  return target();
 }
 
 // PnPjs `update` is a MERGE (partial update) and defaults to IF-MATCH: *
@@ -147,12 +137,4 @@ export async function deleteSharePointListItem({
   itemId
 }: ItemTarget): Promise<void> {
   await getSp(siteUrl).web.lists.getByTitle(listTitle).items.getById(Number(itemId)).delete();
-}
-
-export interface ODataOptions {
-  select?: string[];
-  expand?: string[];
-  filter?: string;
-  top?: number;
-  orderby?: { field: string; ascending: boolean };
 }
