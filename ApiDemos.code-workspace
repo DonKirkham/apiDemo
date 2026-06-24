@@ -1,0 +1,15 @@
+{
+  "folders": [
+    {
+      "name": "apiDemo (Azure Functions API)",
+      "path": "api"
+    },
+    {
+      "name": "DataDemo (SPFx companion)",
+      "path": "data"
+    }
+  ],
+  "settings": {
+    "files.eol": "\n"
+  }
+}
