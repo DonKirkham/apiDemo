@@ -2,11 +2,11 @@
   "folders": [
     {
       "name": "apiDemo (Azure Functions API)",
-      "path": "api"
+      "path": "."
     },
     {
       "name": "DataDemo (SPFx companion)",
-      "path": "data"
+      "path": "../data"
     }
   ],
   "settings": {
