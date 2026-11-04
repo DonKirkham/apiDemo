@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { HttpRequest } from '@azure/functions';
 
+// config.ts reads process.env when it is first imported. So the value has to be
+// set before the import runs. Static imports are hoisted above this line, which
+// is why this file uses await import().
 process.env.ALLOWED_CALLER_DOMAINS = 'https://contoso.sharepoint.com';
 
 const { ensureAllowedDomain } = await import('../src/security/domainRestriction.js');

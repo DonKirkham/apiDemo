@@ -6,7 +6,7 @@ import { SPDefault } from '@pnp/nodejs';
 import { AzureIdentity } from '@pnp/azidjsclient';
 import { ManagedIdentityCredential } from '@azure/identity';
 import { managedIdentityClientId, sharePointResource } from './config.js';
-import { httpError } from './httpError.js';
+import { HttpError } from './httpError.js';
 
 let cachedCredential: ManagedIdentityCredential | undefined;
 const spCache = new Map<string, SPFI>();
@@ -30,7 +30,20 @@ function getCredential(): ManagedIdentityCredential {
 // behaviors and acquires the app-only token from the credential above.
 export function getSp(siteUrl: string): SPFI {
   if (!sharePointResource) {
-    throw httpError(500, 'SHAREPOINT_RESOURCE is required.');
+    throw new HttpError(500, 'SHAREPOINT_RESOURCE is required.');
+  }
+
+  // The identity's token is sent to this URL, so only SharePoint hosts are
+  // allowed. Without this check a caller could point the token at a server
+  // they control.
+  let host: string;
+  try {
+    host = new URL(siteUrl).hostname;
+  } catch {
+    throw new HttpError(400, 'siteUrl must be a valid URL.');
+  }
+  if (!host.endsWith('.sharepoint.com')) {
+    throw new HttpError(400, 'siteUrl must be on a *.sharepoint.com host.');
   }
 
   const normalized = siteUrl.replace(/\/$/, '');

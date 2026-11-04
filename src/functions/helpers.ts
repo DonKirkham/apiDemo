@@ -6,7 +6,7 @@ import {
   updateSharePointListItem,
   deleteSharePointListItem
 } from '../sharepointClient.js';
-import { httpError, statusOf } from '../httpError.js';
+import { HttpError } from '../httpError.js';
 
 export interface CrudResult {
   status: number;
@@ -15,6 +15,9 @@ export interface CrudResult {
   itemId?: string;
 }
 
+// Turns any thrown error into an HTTP response. HttpError carries its own
+// status; anything else is a 500. The error message is returned to the caller
+// as-is. That is handy when learning, but a production API would hide it.
 export async function runWithErrorHandling(
   operation: () => Promise<HttpResponseInit>
 ): Promise<HttpResponseInit> {
@@ -29,8 +32,9 @@ export async function runWithErrorHandling(
 
     return await operation();
   } catch (error) {
+    const status = error instanceof HttpError ? error.status : 500;
     return {
-      status: statusOf(error),
+      status,
       jsonBody: { error: (error as Error).message || 'Unexpected error.' }
     };
   }
@@ -43,10 +47,9 @@ interface RequestBody {
 }
 
 // Resolve the target list. When SHAREPOINT_SITE_URL / SHAREPOINT_LIST_TITLE are
-// configured they are authoritative (locked-down mode) and any client-supplied
-// siteUrl/listTitle is ignored. With them unset, callers may target any
-// site/list per request via the body or query string. itemId comes from the
-// route (e.g. .../domain/5).
+// configured they win (locked-down mode) and any siteUrl/listTitle from the
+// caller is ignored. Otherwise the caller picks the site and list per request.
+// itemId comes from the route (e.g. .../domain/5) and must be a whole number.
 export function resolveTarget(
   request: HttpRequest,
   body: RequestBody | undefined
@@ -57,25 +60,39 @@ export function resolveTarget(
   const itemId = request.params?.itemId;
 
   if (!siteUrl || !listTitle) {
-    throw httpError(400, 'siteUrl and listTitle are required (in the body or query string).');
+    throw new HttpError(400, 'siteUrl and listTitle are required (in the body or query string).');
+  }
+
+  if (itemId !== undefined && !/^\d+$/.test(itemId)) {
+    throw new HttpError(400, `itemId must be a whole number, got "${itemId}".`);
   }
 
   return { siteUrl, listTitle, itemId };
 }
 
-// Dispatches one CRUD operation based on the HTTP method. Shared by every
-// auth-protected endpoint so the create/read/update/delete behavior stays
-// identical regardless of how the caller was authorized.
+// Reads the JSON body for POST and PATCH. A malformed body is the caller's
+// mistake, so it gets a 400 rather than a 500.
+async function readJsonBody(request: HttpRequest): Promise<RequestBody> {
+  try {
+    return (await request.json()) as RequestBody;
+  } catch {
+    throw new HttpError(400, 'Request body must be valid JSON.');
+  }
+}
+
+// Runs one CRUD operation. The HTTP method picks the action. Both route
+// families use this, so create/read/update/delete behave the same no matter
+// how the caller was authorized.
 export async function dispatchCrudOperation(request: HttpRequest): Promise<CrudResult> {
   const method = request.method.toUpperCase();
   const hasBody = method === 'POST' || method === 'PATCH';
-  const body = hasBody ? ((await request.json()) as RequestBody) : undefined;
+  const body = hasBody ? await readJsonBody(request) : undefined;
   const { siteUrl, listTitle, itemId } = resolveTarget(request, body);
 
   switch (method) {
     case 'POST': {
       if (!body?.fields || typeof body.fields !== 'object') {
-        throw httpError(400, 'A fields object is required in the request body to create an item.');
+        throw new HttpError(400, 'A fields object is required in the request body to create an item.');
       }
       const item = await createSharePointListItem({ siteUrl, listTitle, fields: body.fields });
       return { status: 201, operation: 'create', item };
@@ -93,10 +110,10 @@ export async function dispatchCrudOperation(request: HttpRequest): Promise<CrudR
 
     case 'PATCH': {
       if (!itemId) {
-        throw httpError(400, 'An itemId route parameter is required to update an item.');
+        throw new HttpError(400, 'An itemId route parameter is required to update an item.');
       }
       if (!body?.fields || typeof body.fields !== 'object') {
-        throw httpError(400, 'A fields object is required in the request body to update an item.');
+        throw new HttpError(400, 'A fields object is required in the request body to update an item.');
       }
       await updateSharePointListItem({ siteUrl, listTitle, itemId, fields: body.fields });
       return { status: 200, operation: 'update', itemId };
@@ -104,34 +121,26 @@ export async function dispatchCrudOperation(request: HttpRequest): Promise<CrudR
 
     case 'DELETE': {
       if (!itemId) {
-        throw httpError(400, 'An itemId route parameter is required to delete an item.');
+        throw new HttpError(400, 'An itemId route parameter is required to delete an item.');
       }
       await deleteSharePointListItem({ siteUrl, listTitle, itemId });
       return { status: 200, operation: 'delete', itemId };
     }
 
     default:
-      throw httpError(405, `Unsupported method: ${method}`);
+      throw new HttpError(405, `Unsupported method: ${method}`);
   }
 }
 
-// Runs before every operation. Throws to reject the request; returns any extra
-// fields to merge into the JSON response (e.g. the auth mode and caller).
+// Runs before every operation. It throws to reject the request. It returns
+// extra fields to merge into the JSON response, such as the auth mode.
 export type Authorizer = (
   request: HttpRequest
 ) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
-// Registers the CRUD endpoint for one auth tier at two routes:
-//   {prefix}            — the collection
-//   {prefix}/{itemId}   — a single item
-// There are no action words in the URL; the HTTP method maps to the CRUD
-// action (dispatchCrudOperation does the switch):
-//   GET    -> read    (list when no itemId, one item when itemId is present)
-//   POST   -> create
-//   PATCH  -> update  (requires itemId)
-//   DELETE -> delete  (requires itemId)
-// `authorize` runs before every operation; it throws to reject and returns any
-// extra fields to merge into the JSON response (e.g. the auth mode and caller).
+// Registers one auth tier's CRUD endpoint at two routes:
+//   {prefix}           the collection (GET lists, POST creates)
+//   {prefix}/{itemId}  one item (GET reads, PATCH updates, DELETE deletes)
 export function registerCrudRoutes(prefix: string, authorize: Authorizer): void {
   app.http(prefix, {
     route: `${prefix}/{itemId?}`,

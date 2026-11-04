@@ -1,4 +1,4 @@
-# apiDemo
+# api-demo
 
 Demo Azure Functions API used by SPFx for elevated SharePoint list operations.
 
@@ -13,10 +13,15 @@ Two auth-protected route families, each exposing **full CRUD** over a SharePoint
 list via app-only (elevated) permissions:
 
 - **`/api/domain/{itemId?}`**
-  - Accepts calls from configured SPFx origins only (`ALLOWED_CALLER_DOMAINS`)
+  - Accepts calls only from origins in `ALLOWED_CALLER_DOMAINS`.
+  - **Not real security.** Origin and Referer are headers any client can set, so a
+    script outside the browser can fake them. It only blocks casual cross-site calls
+    from browsers. Use the Entra route for real protection.
 - **`/api/entra/{itemId?}`**
   - Requires and validates an Entra ID bearer token
   - Optionally restricts callers to allowed client app IDs (`ALLOWED_CLIENT_APP_IDS`)
+  - If that list is empty, any app in your tenant with a token for this API is
+    accepted. Scopes and app roles are not checked.
 - **`GET /api/health`** for readiness checks
 
 ### CRUD operations (both route families)
@@ -27,7 +32,7 @@ list via app-only (elevated) permissions:
 | **Read (list)** | `GET /api/{mode}` | `siteUrl`, `listTitle` (+ optional OData `$filter`, `$select`, `$top`, `$orderby`) in query string |
 | **Read (one)** | `GET /api/{mode}/{itemId}` | `siteUrl`, `listTitle` in query string |
 | **Update** | `PATCH /api/{mode}/{itemId}` | `siteUrl`, `listTitle`, `fields` in JSON body |
-| **Delete** | `DELETE /api/{mode}/{itemId}` | `siteUrl`, `listTitle` in JSON body or query string |
+| **Delete** | `DELETE /api/{mode}/{itemId}` | `siteUrl`, `listTitle` in query string (DELETE has no body) |
 
 `{mode}` is `domain` or `entra`. There are no action words in the URL — the
 **HTTP method selects the operation**. Update and delete perform an
@@ -41,7 +46,11 @@ unconditional `IF-MATCH: *` write (last-write-wins).
 - **Any site/any list:** leave both unset. Callers then supply `siteUrl` and
   `listTitle` per request (in the JSON body or query string). Only operate this
   way once the endpoint is fully locked down, since it lets an authorized caller
-  reach any list the app registration can access.
+  reach any list the app registration can access. The `siteUrl` must be on a
+  `*.sharepoint.com` host. Any other host is rejected, so the managed-identity token
+  is never sent elsewhere.
+- `itemId` in the route must be a whole number. Anything else returns 400.
+- A request body that is not valid JSON returns 400.
 
 ## Request payload (create / update)
 
@@ -73,13 +82,16 @@ Set these app settings locally (`local.settings.json`) or in Azure:
 - `ALLOWED_CALLER_DOMAINS` (comma-separated origins)
 - `ENTRA_AUDIENCE` (your API App ID URI)
 - `ALLOWED_CLIENT_APP_IDS` (optional comma-separated app IDs)
+- `ENTRA_ISSUER` and `ENTRA_JWKS_URI` (optional overrides). By default both are
+  derived from `AZURE_TENANT_ID`, so you normally don't set them.
 - `AZURE_CLIENT_ID` (optional — client id of a user-assigned managed identity; leave unset for the system-assigned identity)
 
 `local.settings.sample.json` is included as a template.
 
 > **Local runs:** a managed identity only exists inside Azure, so SharePoint calls
 > will fail when running `npm start` on a dev machine. Test SharePoint behavior
-> against the deployed Function App.
+> against the deployed Function App. Local storage for the Functions host uses
+> Azurite (started by the VS Code `tasks.json`, a dev dependency).
 
 ### App registration permissions
 
@@ -155,18 +167,28 @@ func azure functionapp publish <functionAppName> --build remote
 
 Infrastructure and deployment automation files are included:
 
-- `infra/main.bicep` – deploys storage account, Flex Consumption plan (Node 22), Linux Function App, App Insights, and app settings
-- `.github/workflows/deploy.yml` – provisions/updates Azure resources and deploys the function app (remote build) on manual dispatch
+Two workflows, each with one job:
 
-### GitHub configuration for workflow
+- `.github/workflows/infra.yml` – **manual only** (Actions tab, *Run workflow*).
+  Deploys `infra/main.bicep`: storage, Flex Consumption plan (Node 22), Function App,
+  App Insights and app settings. Run it when the infrastructure changes.
+- `.github/workflows/deploy.yml` – **runs on push to `main`** when app code changes
+  (`src/`, `tests/`, `package*.json`, and so on), and can also be run manually. It
+  installs, builds, runs the tests, and only then deploys the code with a remote build.
+  It deploys code only and never touches infrastructure.
 
-Set repository **Secrets**:
+`infra/main.parameters.json` is a template for `infra/main.bicep` parameters. Fill it
+in and pass it with `--parameters @infra/main.parameters.json` if you deploy from the CLI.
+
+### GitHub configuration
+
+Set repository **Secrets** (used by both workflows):
 
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
 
-Set repository **Variables**:
+Set repository **Variables** for `infra.yml`:
 
 - `AZURE_RESOURCE_GROUP`
 - `AZURE_LOCATION`
@@ -176,3 +198,13 @@ Set repository **Variables**:
 - `ALLOWED_CALLER_DOMAINS`
 - `ENTRA_AUDIENCE`
 - `ALLOWED_CLIENT_APP_IDS`
+
+`deploy.yml` also needs `FUNCTION_APP_NAME`, which is listed above.
+
+### Why these settings
+
+- **`excludedTypes: "Request"` in `host.json`:** stops Application Insights from
+  sampling away request telemetry. Each HTTP call stays visible in the logs.
+- **`typescript` in `dependencies` (not `devDependencies`):** the remote build runs
+  `npm run build` (`tsc`) on the server, and this keeps `typescript` installed there.
+- **`azurite` and `tsx` are dev dependencies:** only needed for local runs and tests.
