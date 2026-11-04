@@ -1,4 +1,8 @@
 import { app } from '@azure/functions';
+import { buildInfo } from '../buildInfo.js';
+
+// Process start time: changes on every cold start or restart.
+const startedAt = new Date().toISOString();
 
 app.http('health', {
   route: 'health',
@@ -7,7 +11,11 @@ app.http('health', {
   handler: async () => ({
     status: 200,
     jsonBody: {
-      ok: true
+      ok: true,
+      commit: buildInfo.commit,
+      builtAt: buildInfo.builtAt,
+      startedAt,
+      sharePointAuth: 'managed-identity'
     }
   })
 });
