@@ -17,9 +17,9 @@ The talk is built around **five demos** that move from the problem to the workin
 
 Demos **1 and 5 bookend** the talk: Demo 1 poses the problem (a no-access user can't touch the list), Demo 5 is the payoff (that same user reads/writes it through the Function). Demos 2–4 are the *how*.
 
-⭐ = the four "aha" moments: **D2** (cert, not secret) · **D3** (the origin spoof) · **D4** (the wrong-audience 401) · **D5** (app-only elevation — perms don't matter).
+⭐ = the four "aha" moments: **D2** (managed identity, no secret) · **D3** (the origin spoof) · **D4** (the wrong-audience 401) · **D5** (app-only elevation — perms don't matter).
 
-> **Slide alignment:** this script was restructured from a 10-demo outline into these 5. Slide numbers are intentionally **not** referenced per-demo anymore — re-map the deck to these five sections before presenting. The still-true content gotchas (cert vs. secret, combined handler) are preserved in the appendix at the bottom.
+> **Slide alignment:** this script was restructured from a 10-demo outline into these 5. Slide numbers are intentionally **not** referenced per-demo anymore — re-map the deck to these five sections before presenting. The still-true content gotchas (managed identity vs. cert/secret, combined handler) are preserved in the appendix at the bottom.
 
 ---
 
@@ -30,18 +30,30 @@ Demos **1 and 5 bookend** the talk: Demo 1 poses the problem (a no-access user c
   - **Reader** — Read-only on the list.
   - **Outsider** — **no** access to the list at all.
 - [ ] `npm install` already run; `node_modules` present.
-- [ ] `local.settings.json` populated from `local.settings.sample.json` with **real** `pdslabs2` values (cert PEM in `SHAREPOINT_CERT_PEM`; `ENTRA_AUDIENCE` set to the real App ID URI; `SHAREPOINT_SITE_URL`/`SHAREPOINT_LIST_TITLE` pinned if you're using locked-down mode).
+- [ ] **Live app runs the managed-identity build:** `deploy.yml` is green on `main` and the Function App's identity has `Sites.ReadWrite.All` (see *Managed identity setup* below). A managed identity only exists in Azure, so the SharePoint calls in D1/D5 run against the live app, not `func start`.
+- [ ] `local.settings.json` (for the offline code walk-throughs and `npm test` only) populated from `local.settings.sample.json` with `ENTRA_AUDIENCE` set to the real App ID URI and `SHAREPOINT_SITE_URL`/`SHAREPOINT_LIST_TITLE` pinned if you're using locked-down mode. No SharePoint secret or certificate goes in it.
 - [ ] `func start` works locally → `http://localhost:7071/api/health` returns `{ "ok": true }`.
 - [ ] Live app is warm: open `https://apidemo-func-4r1iq2.azurewebsites.net/api/health` once so the first cold start is paid before the audience is watching. (Or set `alwaysReadyInstances=1` and redeploy infra.)
 - [ ] A **valid Entra bearer token** for the Tier-2 endpoint copied somewhere pasteable (for D4/jwt.ms), plus **one deliberately-wrong token** (a Graph token, or a token with the wrong `aud`).
 - [ ] Postman/Thunder Client collection open with the four CRUD calls + a "no-origin" call + a spoofed-Origin call pre-built.
 - [ ] `jwt.ms` open in a tab.
-- [ ] Azure Portal open and **already signed in** to `pdslabs2`: the app registration, the Function App (`apidemo-func-4r1iq2`), and App Insights blades pinned.
+- [ ] Azure Portal open and **already signed in** to `pdslabs2`: the app registration, the Function App (`apidemo-func-4r1iq2`) **Identity** blade, Enterprise applications, and App Insights blades pinned.
 - [ ] Companion **SPFx repo** (`data`) open in a second VS Code window for Demo 5 — `ServiceFactory.ts`, `ApiDomainSpService.ts`, `ApiEntraSpService.ts`, `PnPjsApiSpService.ts` ready.
 - [ ] Font size cranked; terminal + editor at presentation zoom.
-- [ ] **Secrets hygiene:** the cert PEM and any real tokens must NOT be visible on screen. Keep `local.settings.json` closed; show `local.settings.sample.json` if you must show a settings file.
+- [ ] **Secrets hygiene:** real bearer tokens must NOT be visible on screen. Keep `local.settings.json` closed; show `local.settings.sample.json` if you must show a settings file.
 
 **If the venue Wi-Fi dies:** the code reads in D2/D3/D4 and `npm test` all run **offline**. jwt.ms (D4) and anything live (the deployed app, the web part, the Portal) need the network — fall back to the recorded clips / screenshots noted in each demo.
+
+---
+
+## Managed identity setup (do once, before the talk)
+
+The SharePoint calls now run as the Function App's **system-assigned managed identity**. Nothing secret is stored; the identity needs one SharePoint permission.
+
+1. **Get the workflows green.** `deploy.yml` fails at `azure/login` because the repo has no `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` secrets (or `FUNCTION_APP_NAME` variable). Add them under *Settings → Secrets and variables → Actions*, then re-run: `gh workflow run deploy.yml --ref main`.
+2. **Confirm the identity exists.** `az functionapp identity show -g <rg> -n apidemo-func-4r1iq2 --query principalId -o tsv` → a GUID. (`infra/main.bicep` already sets `identity: SystemAssigned`.)
+3. **Grant `Sites.ReadWrite.All`** with the command in the [README](../README.md#app-registration-permissions) (uses the principal ID from step 2). The Portal can't add this grant; the Enterprise applications blade in D2 only confirms it.
+4. **Verify before you walk on:** `curl -H "Origin: https://pdslabs2.sharepoint.com" "https://apidemo-func-4r1iq2.azurewebsites.net/api/domain?siteUrl=https://pdslabs2.sharepoint.com/sites/<site>&listTitle=Speaking%20Events"` → rows, not an error. If it errors, the grant is missing or the deploy didn't land.
 
 ---
 
@@ -85,13 +97,13 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
 
 ---
 
-# Demo 2 — The Azure Function: deployed pieces, then the SharePoint code ⭐
+# Demo 2 — The Azure Function: deployed pieces, then the identity ⭐
 
 **~16 min · risk: MED (live Azure + SharePoint)**
 
-**Goal:** show what's running in Azure, then open the code and land the headline gotcha: **app-only to SharePoint REST must use a *certificate*, not a client secret.**
+**Goal:** show what's running in Azure, then land the headline: **the Function talks to SharePoint as itself, using a managed identity — no client secret, no certificate to rotate or leak.** The one thing to get right is granting that identity access.
 
-## Part A — the deployed pieces (Azure Portal, ~6 min)
+## Part A — the deployed pieces (Azure Portal, ~8 min)
 
 **Pre-state:** Portal on the Function App `apidemo-func-4r1iq2`.
 
@@ -99,29 +111,31 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
 1. **Overview / Functions:** show the three discovered functions — `health`, `domain`, `entra`. "The runtime *discovers* these from `app.http(...)` calls — no routing config to maintain."
 2. **Hit it live:** `https://apidemo-func-4r1iq2.azurewebsites.net/api/health` → `{ "ok": true }`.
 3. **Plan:** point out **Flex Consumption (FC1)** — scale-to-zero, warm starts, Node 22. Mention `alwaysReadyInstances` is the cold-start knob ([main.bicep](../infra/main.bicep)).
-4. **Configuration → App settings:** show the env vars the code reads (`AZURE_TENANT_ID`, `SHAREPOINT_APP_CLIENT_ID`, `SHAREPOINT_RESOURCE`, `ALLOWED_CALLER_DOMAINS`, `ENTRA_AUDIENCE`, …). Show a secret bound as `@Microsoft.KeyVault(SecretUri=…)` — "same env var name, zero code change."
-5. **App Insights → Live Metrics:** fire a request, watch it appear.
-6. **CORS:** show the allowed-origins list — SharePoint domains only, **no `*`**. "This is the *browser* preflight, separate from the app's own origin check we'll see in D3."
-7. **How it got here (IaC):** flip to [main.bicep](../infra/main.bicep) + the split workflows — [infra.yml](../.github/workflows/infra.yml) (manual provision) vs [deploy.yml](../.github/workflows/deploy.yml) (push-triggered, build+test gated). Call out the **`remote-build` / `--build remote`** requirement: `.funcignore` excludes `node_modules` and **Flex Consumption doesn't support `SCM_DO_BUILD_DURING_DEPLOYMENT`**, so the build is requested server-side at deploy time. Skip it → zero functions registered → everything 404s. The #1 first-deploy trap.
+4. **Configuration → App settings:** show the env vars the code reads (`AZURE_TENANT_ID`, `SHAREPOINT_RESOURCE`, `ALLOWED_CALLER_DOMAINS`, `ENTRA_AUDIENCE`, …). Then point at what's **missing**: no client ID, no client secret, no certificate PEM. "Nothing to rotate, nothing to leak into a setting."
+5. **Identity — the new bit:** **Settings → Identity → System assigned: On.** Copy the **Object (principal) ID**. "This is the Function's own identity. Azure issues its tokens at runtime; the code never holds a credential."
+6. **The grant:** **Enterprise applications** → search the Object ID → **Permissions**: `Sites.ReadWrite.All` (Application), admin-consented. "The Portal can't add this one, so it's a one-time CLI step ([README](../README.md#app-registration-permissions)). If it's missing, every SharePoint call fails, however correct the code is." Show the terminal output of the grant if you pre-ran it.
+7. **App Insights → Live Metrics:** fire a request, watch it appear.
+8. **CORS:** show the allowed-origins list — SharePoint domains only, **no `*`**. "This is the *browser* preflight, separate from the app's own origin check we'll see in D3."
+9. **How it got here (IaC):** flip to [main.bicep](../infra/main.bicep) + the split workflows — [infra.yml](../.github/workflows/infra.yml) (manual provision) vs [deploy.yml](../.github/workflows/deploy.yml) (push-triggered, build+test gated). Call out the **`remote-build` / `--build remote`** requirement: `.funcignore` excludes `node_modules` and **Flex Consumption doesn't support `SCM_DO_BUILD_DURING_DEPLOYMENT`**, so the build is requested server-side at deploy time. Skip it → zero functions registered → everything 404s. The #1 first-deploy trap.
 
-## Part B — the SharePoint code (VS Code, ~10 min)
+## Part B — the SharePoint code (VS Code, ~8 min)
 
-**Pre-state:** [src/sharepointClient.ts](../src/sharepointClient.ts) open; [helpers.ts](../src/functions/helpers.ts) in a split. Optional: a breakpoint on the `switch (method)` in `dispatchCrudOperation` ([helpers.ts:109](../src/functions/helpers.ts#L109)).
+**Pre-state:** [src/sharepointClient.ts](../src/sharepointClient.ts) open; [helpers.ts](../src/functions/helpers.ts) in a split. Optional: a breakpoint on the `switch (method)` in `dispatchCrudOperation` ([helpers.ts:69](../src/functions/helpers.ts#L69)).
 
 **Steps**
-1. **`getSp()`** ([sharepointClient.ts:55](../src/sharepointClient.ts#L55)): `spfi(siteUrl).using(SPDefault(), AzureIdentity(getCredential(), [sharePointResource]))`. "This is the *exact* `spfi().using(...)` shape you'd write in a web part — the only difference in Node is *which* credential I hand it." Note the per-site SPFI cache.
-2. **`getCredential()`** ([sharepointClient.ts:27](../src/sharepointClient.ts#L27)): if `SHAREPOINT_CERT_PEM` is set → **`ClientCertificateCredential`**; else fall back to `ClientSecretCredential`. The PEM (key + cert) comes straight from the app setting — no hand-rolled JWT; `@azure/identity` mints the token.
-3. **The reveal ⭐:** "The secret branch *gets a token just fine*. But when that token hits SharePoint REST you get `401 Unsupported app only token`. SharePoint only honors **certificate-based** app-only tokens. That one line cost me an afternoon." (Optional live: flip to secret-only and show the 401.)
-4. **The shared pipeline:** in [helpers.ts](../src/functions/helpers.ts), show `registerCrudRoutes(prefix, authorize)` ([helpers.ts:169](../src/functions/helpers.ts#L169)) → route `{prefix}/{itemId?}`, methods `GET/POST/PATCH/DELETE`, and `dispatchCrudOperation` ([helpers.ts:103](../src/functions/helpers.ts#L103)) switching the **HTTP method → CRUD action**. "One combined handler per tier. No action words in the URL. Both endpoints share this — auth is the only thing that differs." Note `runWithErrorHandling` (config preflight → 500, central error→status) and `resolveTarget` (locked-down `SHAREPOINT_SITE_URL`/`LIST_TITLE` vs. caller-supplied site/list).
+1. **`getSp()`** ([sharepointClient.ts:31](../src/sharepointClient.ts#L31)): `spfi(siteUrl).using(SPDefault(), AzureIdentity(getCredential(), [sharePointResource]))`. "This is the *exact* `spfi().using(...)` shape you'd write in a web part — the only difference in Node is *which* credential I hand it." Note the per-site SPFI cache.
+2. **`getCredential()`** ([sharepointClient.ts:18](../src/sharepointClient.ts#L18)): `new ManagedIdentityCredential()`. No tenant, no client ID, no secret. "Azure hands the Function a token for its own identity. `AZURE_CLIENT_ID` is only there if we ever move to a user-assigned identity."
+3. **The history ⭐:** "This file used to pick between a certificate and a client secret. The secret path got a token, but SharePoint rejected it with `401 Unsupported app only token`. That's why we used a cert. Now there's nothing to choose — the identity *is* the credential."
+4. **The shared pipeline:** in [helpers.ts](../src/functions/helpers.ts), show `registerCrudRoutes(prefix, authorize)` ([helpers.ts:135](../src/functions/helpers.ts#L135)) → route `{prefix}/{itemId?}`, methods `GET/POST/PATCH/DELETE`, and `dispatchCrudOperation` ([helpers.ts:69](../src/functions/helpers.ts#L69)) switching the **HTTP method → CRUD action**. "One combined handler per tier. No action words in the URL. Both endpoints share this — auth is the only thing that differs." Note `runWithErrorHandling` (config preflight → 500, central error→status) and `resolveTarget` (locked-down `SHAREPOINT_SITE_URL`/`LIST_TITLE` vs. caller-supplied site/list).
 5. The CRUD call site: `getSp(siteUrl).web.lists.getByTitle(listTitle).items.add(fields)` — "identical to a web part." Mention `update` is a MERGE with `IF-MATCH: *` (last-write-wins).
 
-**Say:** "In the browser, PnPjs gets its identity from the page context. In a Function there's no user, so I give it an app identity explicitly — a daemon registration, `Sites.ReadWrite.All` application permission, admin-consented, authenticating with a **certificate**. Same API, explicit credential."
+**Say:** "In the browser, PnPjs gets its identity from the page context. In a Function there's no user, so I give it an app identity explicitly — the Function's own managed identity, with `Sites.ReadWrite.All` granted once. Same API, and nothing secret to manage."
 
-**Aha:** same PnPjs API as SPFx, just a different credential — and **cert > secret** for SharePoint app-only.
+**Aha:** same PnPjs API as SPFx, and no credential in the code or the config. The identity is a deployment setting, not a secret.
 
-**Fallback:** Part A → previous deploy output + screenshots of the Portal blades. Part B → pure code read, no network. `npm test` (the [helpers.test.ts](../tests/helpers.test.ts) cases) proves the pipeline offline.
+**Fallback:** Part A → previous deploy output + screenshots of the Identity and Enterprise applications blades. Part B → pure code read, no network. `npm test` (the [helpers.test.ts](../tests/helpers.test.ts) cases) proves the pipeline offline.
 
-**Reset:** restore `local.settings.json` to the cert if you flipped it; clear the breakpoint.
+**Reset:** clear the breakpoint.
 
 ---
 
@@ -159,9 +173,9 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
 **Pre-state:** Portal signed into `pdslabs2`, the app registration open.
 
 **Steps**
-1. **One app, two roles.** Call out up front that in this demo the *same* registration (`99b202da-…`) is both the **app-only-to-SharePoint** identity (its cert + `Sites.ReadWrite.All` from D2) **and** the **API the SPFx web part calls**. You could split them; here they're one.
-2. **Certificates & secrets / API permissions:** show the uploaded certificate (the credential D2's code uses) and the admin-consented `Sites.ReadWrite.All` *application* permission.
-3. **Expose an API:** show the **Application ID URI** `api://99b202da-…` and the custom scope (e.g. `SharePoint.ReadWrite`). "This URI is what becomes `ENTRA_AUDIENCE` ([config.ts:36](../src/config.ts#L36)) in the Function, and what SPFx's `getClient('api://…')` asks for in D5."
+1. **Two identities, two jobs.** Call out up front: the Function's **managed identity** calls SharePoint (D2). The **app registration** (`99b202da-…`) is the API the SPFx web part calls, and tokens are issued for it. They're separate, and the app registration holds no SharePoint credential.
+2. **Certificates & secrets:** "No SharePoint credential lives here anymore. The Function's identity isn't in this blade; its SharePoint grant is the one we showed in D2." If the blade still shows an old certificate from before the migration, say so and skip it.
+3. **Expose an API:** show the **Application ID URI** `api://99b202da-…` and the custom scope (e.g. `SharePoint.ReadWrite`). "This URI is what becomes `ENTRA_AUDIENCE` ([config.ts:26](../src/config.ts#L26)) in the Function, and what SPFx's `getClient('api://…')` asks for in D5."
 4. **Client consent:** the SPFx client's API permission → My APIs → this scope → **admin consent granted** (green check). "Until an admin approves this post-deploy, every Tier-2 call 401s. The step people forget."
 
 ## Part B — the validation code (VS Code + jwt.ms, ~10 min)
@@ -232,19 +246,19 @@ Running long is the default failure mode. Trim **within** demos rather than drop
 
 These gotchas survive the restructure; keep them in mind when you re-map the deck.
 
-1. **App-Only Auth is a *certificate*, not a client secret.** The code authenticates with a **certificate** because SharePoint REST rejects secret-based app-only tokens (`401 Unsupported app only token`). Any slide that says "generate a client secret" should say **"generate & upload a certificate"** (`az ad app credential reset --id <clientId> --create-cert --append`), stored in `SHAREPOINT_CERT_PEM`. The shape in the repo:
+1. **App-only auth uses the Function's *managed identity*, not a certificate or a client secret.** Any slide that says "generate a client secret" or "upload a certificate" should say **"grant the Function's managed identity `Sites.ReadWrite.All`"** (README command, one time). SharePoint REST rejects secret-based app-only tokens (`401 Unsupported app only token`); that history is why we moved away from them. The shape in the repo:
    ```ts
    import { spfi } from "@pnp/sp";
    import { SPDefault } from "@pnp/nodejs";
    import { AzureIdentity } from "@pnp/azidjsclient";
-   import { ClientCertificateCredential } from "@azure/identity";
+   import { ManagedIdentityCredential } from "@azure/identity";
 
-   const credential = new ClientCertificateCredential(tenantId, clientId, { certificate: pem });
+   const credential = new ManagedIdentityCredential();
    export const getSp = (siteUrl: string) =>
      spfi(siteUrl).using(SPDefault(), AzureIdentity(credential, [sharePointResource]));
    ```
    This is the D2 reveal.
 
-2. **One combined handler per tier — no action words in the URL.** The repo uses `/api/{tier}/{itemId?}` with `methods: ['GET','POST','PATCH','DELETE']`, and the **HTTP method maps to the CRUD action** inside `dispatchCrudOperation` ([helpers.ts:103](../src/functions/helpers.ts#L103)). Both tiers are wired by one shared `registerCrudRoutes(prefix, authorize)` ([helpers.ts:169](../src/functions/helpers.ts#L169)). If the deck shows a separate-function-per-verb diagram, drop it in favor of the combined-handler one.
+2. **One combined handler per tier — no action words in the URL.** The repo uses `/api/{tier}/{itemId?}` with `methods: ['GET','POST','PATCH','DELETE']`, and the **HTTP method maps to the CRUD action** inside `dispatchCrudOperation` ([helpers.ts:69](../src/functions/helpers.ts#L69)). Both tiers are wired by one shared `registerCrudRoutes(prefix, authorize)` ([helpers.ts:135](../src/functions/helpers.ts#L135)). If the deck shows a separate-function-per-verb diagram, drop it in favor of the combined-handler one.
 
 3. **`@azure/identity` credential via the PnPjs `AzureIdentity` behavior** — if a slide mentions "AzureIdentityFetchClient or MSAL," simplify it to this, which is what the code uses.
