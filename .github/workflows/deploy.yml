@@ -58,3 +58,5 @@ jobs:
           app-name: ${{ vars.FUNCTION_APP_NAME }}
           package: '.'
           remote-build: true
+          # Exclude local node_modules/dist from the zip so Oryx installs dependencies itself.
+          respect-funcignore: true
