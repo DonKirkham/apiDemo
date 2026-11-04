@@ -99,6 +99,7 @@ SPO_SP=$(az ad sp show --id $SPO_APP --query id -o tsv)
 ROLE_ID=$(az ad sp show --id $SPO_APP --query "appRoles[?value=='Sites.ReadWrite.All'].id | [0]" -o tsv)
 
 az rest --method POST \
+  --headers "Content-Type=application/json" \
   --uri "https://graph.microsoft.com/v1.0/servicePrincipals/<principalId>/appRoleAssignments" \
   --body "{\"principalId\":\"<principalId>\",\"resourceId\":\"$SPO_SP\",\"appRoleId\":\"$ROLE_ID\"}"
 ```
