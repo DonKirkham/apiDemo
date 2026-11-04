@@ -10,7 +10,7 @@ param storageAccountName string
 @description('Azure AD tenant id')
 param tenantId string
 
-@description('SharePoint resource scope for client credentials')
+@description('SharePoint resource scope for the managed identity token, e.g. https://contoso.sharepoint.com/.default')
 param sharePointResource string
 
 @description('Comma-separated allowed SPFx origins')
@@ -95,6 +95,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
       }
       scaleAndConcurrency: {
+        // Demo value: the most instances the app can scale out to.
         maximumInstanceCount: 40
         instanceMemoryMB: 2048
         // Keep N instances pre-warmed so HTTP calls skip cold start. 'http' covers
@@ -114,6 +115,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       minTlsVersion: '1.2'
       appSettings: [
+        // Demo shortcut: uses the storage account key. A production app would use
+        // an identity-based connection instead, so no key is needed.
         {
           name: 'AzureWebJobsStorage'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'

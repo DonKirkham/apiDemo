@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'tests/**'
       - 'package.json'
       - 'package-lock.json'
       - 'host.json'
@@ -36,10 +37,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Gate: fail the deploy before it starts if the code doesn't compile or
-      # the tests don't pass. (Oryx rebuilds server-side via remote-build below;
-      # this step is purely a safety check.)
-      # Stamp the commit and build time into the code so /api/health shows what is deployed.
+      # Stamp the commit and build time into src/buildInfo.ts so /api/health
+      # shows what is deployed. This only changes the file on the runner. It is
+      # not committed back to the repo.
       - name: Stamp build info
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -47,6 +47,9 @@ jobs:
           printf 'export const buildInfo = {\n  commit: "%s",\n  builtAt: "%s"\n};\n' "$COMMIT_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > src/buildInfo.ts
           cat src/buildInfo.ts
 
+      # Gate: stop the deploy if the code doesn't compile or the tests fail.
+      # Oryx rebuilds on the server (remote-build below). This step is only a
+      # safety check that runs before anything is deployed.
       - name: Build
         run: npm run build
 
