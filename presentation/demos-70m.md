@@ -109,7 +109,7 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
 
 **Steps**
 1. **Overview / Functions:** show the three discovered functions — `health`, `domain`, `entra`. "The runtime *discovers* these from `app.http(...)` calls — no routing config to maintain."
-2. **Hit it live:** `https://apidemo-func-4r1iq2.azurewebsites.net/api/health` → `{ "ok": true }`.
+2. **Hit it live:** `https://apidemo-func-4r1iq2.azurewebsites.net/api/health` → `{ "ok": true, "commit": "…", "builtAt": "…", "startedAt": "…", "sharePointAuth": "managed-identity" }`. "This tells you what's deployed: the commit, when CI built it, and that SharePoint auth is the managed identity."
 3. **Plan:** point out **Flex Consumption (FC1)** — scale-to-zero, warm starts, Node 22. Mention `alwaysReadyInstances` is the cold-start knob ([main.bicep](../infra/main.bicep)).
 4. **Configuration → App settings:** show the env vars the code reads (`AZURE_TENANT_ID`, `SHAREPOINT_RESOURCE`, `ALLOWED_CALLER_DOMAINS`, `ENTRA_AUDIENCE`, …). Then point at what's **missing**: no client ID, no client secret, no certificate PEM. "Nothing to rotate, nothing to leak into a setting."
 5. **Identity — the new bit:** **Settings → Identity → System assigned: On.** Copy the **Object (principal) ID**. "This is the Function's own identity. Azure issues its tokens at runtime; the code never holds a credential."
@@ -117,6 +117,7 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
 7. **App Insights → Live Metrics:** fire a request, watch it appear.
 8. **CORS:** show the allowed-origins list — SharePoint domains only, **no `*`**. "This is the *browser* preflight, separate from the app's own origin check we'll see in D3."
 9. **How it got here (IaC):** flip to [main.bicep](../infra/main.bicep) + the split workflows — [infra.yml](../.github/workflows/infra.yml) (manual provision) vs [deploy.yml](../.github/workflows/deploy.yml) (push-triggered, build+test gated). Call out the **`remote-build` / `--build remote`** requirement: `.funcignore` excludes `node_modules` and **Flex Consumption doesn't support `SCM_DO_BUILD_DURING_DEPLOYMENT`**, so the build is requested server-side at deploy time. Skip it → zero functions registered → everything 404s. The #1 first-deploy trap.
+   - **Second trap:** Oryx installs *production* dependencies only, so `typescript` must be in `dependencies`, not `devDependencies`, or the remote build fails with `tsc: not found`. And `respect-funcignore: true` keeps the CI runner's local `node_modules` out of the zip.
 
 ## Part B — the SharePoint code (VS Code, ~8 min)
 
