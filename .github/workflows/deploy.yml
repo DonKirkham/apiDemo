@@ -39,6 +39,14 @@ jobs:
       # Gate: fail the deploy before it starts if the code doesn't compile or
       # the tests don't pass. (Oryx rebuilds server-side via remote-build below;
       # this step is purely a safety check.)
+      # Stamp the commit and build time into the code so /api/health shows what is deployed.
+      - name: Stamp build info
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          printf 'export const buildInfo = {\n  commit: "%s",\n  builtAt: "%s"\n};\n' "$COMMIT_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > src/buildInfo.ts
+          cat src/buildInfo.ts
+
       - name: Build
         run: npm run build
 
