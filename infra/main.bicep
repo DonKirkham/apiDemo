@@ -7,13 +7,6 @@ param functionAppName string
 @description('Globally unique storage account name')
 param storageAccountName string
 
-@description('SharePoint App Registration client id')
-param sharePointClientId string
-
-@secure()
-@description('SharePoint App Registration client secret')
-param sharePointClientSecret string
-
 @description('Azure AD tenant id')
 param tenantId string
 
@@ -28,10 +21,6 @@ param entraAudience string
 
 @description('Comma-separated client app ids allowed to call Entra endpoint')
 param allowedClientAppIds string = ''
-
-@secure()
-@description('PEM (certificate + private key) for SharePoint app-only certificate auth. Leave empty to use the client secret instead.')
-param sharePointCertPem string = ''
 
 @description('Always Ready (pre-warmed) instances kept running to avoid cold starts. 1 keeps a single instance warm; 0 disables and scales fully to zero. Always Ready instances are billed continuously, even when idle.')
 @minValue(0)
@@ -124,7 +113,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     }
     siteConfig: {
       minTlsVersion: '1.2'
-      appSettings: concat([
+      appSettings: [
         {
           name: 'AzureWebJobsStorage'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
@@ -142,14 +131,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: tenantId
         }
         {
-          name: 'SHAREPOINT_APP_CLIENT_ID'
-          value: sharePointClientId
-        }
-        {
-          name: 'SHAREPOINT_APP_CLIENT_SECRET'
-          value: sharePointClientSecret
-        }
-        {
           name: 'SHAREPOINT_RESOURCE'
           value: sharePointResource
         }
@@ -161,12 +142,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'ALLOWED_CLIENT_APP_IDS'
           value: allowedClientAppIds
         }
-      ], empty(sharePointCertPem) ? [] : [
-        {
-          name: 'SHAREPOINT_CERT_PEM'
-          value: sharePointCertPem
-        }
-      ])
+      ]
     }
   }
 }
