@@ -26,7 +26,7 @@ Demos **1 and 5 bookend** the talk: Demo 1 poses the problem (a no-access user c
 ## Pre-flight checklist (do this before you walk on stage)
 
 - [ ] **Three signed-in browser profiles** ready for the `pdslabs2` tenant, each on the target site, labeled so the audience can tell them apart:
-  - **Owner** — Full Control on the `Speaking Events` (or `Requests`) list.
+  - **Owner** — Full Control on the `Speaking Events` list.
   - **Reader** — Read-only on the list.
   - **Outsider** — **no** access to the list at all.
 - [ ] `npm install` already run; `node_modules` present.
@@ -53,7 +53,7 @@ The SharePoint calls now run as the Function App's **system-assigned managed ide
 1. **Get the workflows green.** `deploy.yml` fails at `azure/login` because the repo has no `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` secrets (or `FUNCTION_APP_NAME` variable). Add them under *Settings → Secrets and variables → Actions*, then re-run: `gh workflow run deploy.yml --ref main`.
 2. **Confirm the identity exists.** `az functionapp identity show -g <rg> -n apidemo-func-4r1iq2 --query principalId -o tsv` → a GUID. (`infra/main.bicep` already sets `identity: SystemAssigned`.)
 3. **Grant `Sites.ReadWrite.All`** with the command in the [README](../README.md#app-registration-permissions) (uses the principal ID from step 2). The Portal can't add this grant; the Enterprise applications blade in D2 only confirms it.
-4. **Verify before you walk on:** `curl -H "Origin: https://pdslabs2.sharepoint.com" "https://apidemo-func-4r1iq2.azurewebsites.net/api/domain?siteUrl=https://pdslabs2.sharepoint.com/sites/<site>&listTitle=Speaking%20Events"` → rows, not an error. If it errors, the grant is missing or the deploy didn't land.
+4. **Verify before you walk on:** `curl -H "Origin: https://pdslabs2.sharepoint.com" "https://apidemo-func-4r1iq2.azurewebsites.net/api/domain?siteUrl=https://pdslabs2.sharepoint.com&listTitle=Speaking%20Events"` → rows, not an error. If it errors, the grant is missing or the deploy didn't land.
 
 ---
 
