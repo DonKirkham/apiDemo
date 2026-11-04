@@ -46,8 +46,6 @@ jobs:
             --parameters \
               functionAppName="$FUNCTION_APP_NAME" \
               storageAccountName="$STORAGE_ACCOUNT_NAME" \
-              sharePointClientId="${{ secrets.SHAREPOINT_APP_CLIENT_ID }}" \
-              sharePointClientSecret="${{ secrets.SHAREPOINT_APP_CLIENT_SECRET }}" \
               tenantId="${{ secrets.AZURE_TENANT_ID }}" \
               sharePointResource="$SHAREPOINT_RESOURCE" \
               allowedCallerDomains="$ALLOWED_CALLER_DOMAINS" \

@@ -8,12 +8,6 @@
     "storageAccountName": {
       "value": "apidemostorage0001"
     },
-    "sharePointClientId": {
-      "value": "00000000-0000-0000-0000-000000000000"
-    },
-    "sharePointClientSecret": {
-      "value": "replace-me"
-    },
     "tenantId": {
       "value": "00000000-0000-0000-0000-000000000000"
     },

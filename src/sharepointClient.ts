@@ -4,47 +4,23 @@ import '@pnp/sp/lists/index.js';
 import '@pnp/sp/items/index.js';
 import { SPDefault } from '@pnp/nodejs';
 import { AzureIdentity } from '@pnp/azidjsclient';
-import { ClientCertificateCredential, ClientSecretCredential } from '@azure/identity';
-import {
-  tenantId,
-  sharePointClientId,
-  sharePointClientSecret,
-  sharePointCertPem,
-  sharePointResource
-} from './config.js';
+import { ManagedIdentityCredential } from '@azure/identity';
+import { managedIdentityClientId, sharePointResource } from './config.js';
 import { httpError } from './httpError.js';
 
-type AppOnlyCredential = ClientCertificateCredential | ClientSecretCredential;
-
-let cachedCredential: AppOnlyCredential | undefined;
+let cachedCredential: ManagedIdentityCredential | undefined;
 const spCache = new Map<string, SPFI>();
 
-// App-only credential. SharePoint REST only honors *certificate-based* Entra
-// app-only tokens, so the certificate path is the one that actually works; a
-// client secret acquires a token fine but the SharePoint call returns
-// "401 Unsupported app only token". The secret path is kept only as a fallback
-// for demonstrating that failure.
-function getCredential(): AppOnlyCredential {
-  if (cachedCredential) {
-    return cachedCredential;
+// App-only credential via the Function App's managed identity. No secret or
+// certificate is stored anywhere: Azure issues the token to the app's identity
+// at runtime. The identity needs an application permission on SharePoint
+// (e.g. Sites.ReadWrite.All), granted once with admin consent; see README.
+function getCredential(): ManagedIdentityCredential {
+  if (!cachedCredential) {
+    cachedCredential = managedIdentityClientId
+      ? new ManagedIdentityCredential({ clientId: managedIdentityClientId })
+      : new ManagedIdentityCredential();
   }
-
-  if (!tenantId || !sharePointClientId) {
-    throw httpError(500, 'AZURE_TENANT_ID and SHAREPOINT_APP_CLIENT_ID are required.');
-  }
-
-  if (sharePointCertPem) {
-    // `certificate` takes the full PEM (private key + certificate blocks),
-    // exactly the format stored in the SHAREPOINT_CERT_PEM app setting.
-    cachedCredential = new ClientCertificateCredential(tenantId, sharePointClientId, {
-      certificate: sharePointCertPem
-    });
-  } else if (sharePointClientSecret) {
-    cachedCredential = new ClientSecretCredential(tenantId, sharePointClientId, sharePointClientSecret);
-  } else {
-    throw httpError(500, 'SHAREPOINT_CERT_PEM or SHAREPOINT_APP_CLIENT_SECRET is required.');
-  }
-
   return cachedCredential;
 }
 

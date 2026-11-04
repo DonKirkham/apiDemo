@@ -3,8 +3,9 @@
 Demo Azure Functions API used by SPFx for elevated SharePoint list operations.
 
 Written in **TypeScript** (Node v4 programming model, ESM) and talks to SharePoint
-through **PnPjs** (`@pnp/sp`) using **certificate-based app-only** auth via
-`@azure/identity`'s `ClientCertificateCredential`. Build output lands in `dist/`.
+through **PnPjs** (`@pnp/sp`) using **app-only** auth via the Function App's
+**managed identity** (`@azure/identity`'s `ManagedIdentityCredential`). No secret or
+certificate is stored. Build output lands in `dist/`.
 
 ## What this project provides
 
@@ -66,34 +67,43 @@ GET /api/entra?siteUrl=https://contoso.sharepoint.com/sites/Finance&listTitle=Re
 Set these app settings locally (`local.settings.json`) or in Azure:
 
 - `AZURE_TENANT_ID`
-- `SHAREPOINT_APP_CLIENT_ID`
-- **App-only credential — one of:**
-  - `SHAREPOINT_CERT_PEM` (**recommended**): full PEM (private key + certificate). SharePoint REST only honors **certificate-based** Entra app-only tokens; a client secret is rejected with `401 Unsupported app only token`.
-  - `SHAREPOINT_APP_CLIENT_SECRET`: works for token acquisition but the SharePoint call will fail — kept only as a fallback / for demonstration.
 - `SHAREPOINT_RESOURCE` (example: `https://contoso.sharepoint.com/.default`)
 - `SHAREPOINT_SITE_URL` (optional — pins all requests to one site, e.g. `https://contoso.sharepoint.com/sites/Finance`)
 - `SHAREPOINT_LIST_TITLE` (optional — pins all requests to one list, e.g. `Requests`)
 - `ALLOWED_CALLER_DOMAINS` (comma-separated origins)
 - `ENTRA_AUDIENCE` (your API App ID URI)
 - `ALLOWED_CLIENT_APP_IDS` (optional comma-separated app IDs)
+- `AZURE_CLIENT_ID` (optional — client id of a user-assigned managed identity; leave unset for the system-assigned identity)
 
 `local.settings.sample.json` is included as a template.
 
+> **Local runs:** a managed identity only exists inside Azure, so SharePoint calls
+> will fail when running `npm start` on a dev machine. Test SharePoint behavior
+> against the deployed Function App.
+
 ### App registration permissions
 
-The app registration (`SHAREPOINT_APP_CLIENT_ID`) needs a SharePoint Online **application**
-permission with admin consent:
+The Function App's **system-assigned managed identity** needs the SharePoint Online
+**application** permission `Sites.ReadWrite.All`, granted with admin consent:
 
 - **`Sites.ReadWrite.All`** — sufficient for this API, which **reads, creates, updates, and deletes items in an existing list**.
 - The target list must already exist. Creating lists/site structure would require the
   higher `Sites.Manage.All` (or `Sites.FullControl.All`), which this API intentionally does not need.
 
-Generate and upload the certificate in one step:
+Grant it once after the infrastructure deployment (replace `<principalId>`; get it with
+`az functionapp identity show -g <rg> -n <functionAppName> --query principalId -o tsv`):
 
 ```bash
-az ad app credential reset --id <SHAREPOINT_APP_CLIENT_ID> --create-cert --append
-# put the contents of the emitted .pem file into SHAREPOINT_CERT_PEM
+SPO_APP=00000003-0000-0ff1-ce00-000000000000   # Office 365 SharePoint Online
+SPO_SP=$(az ad sp show --id $SPO_APP --query id -o tsv)
+ROLE_ID=$(az ad sp show --id $SPO_APP --query "appRoles[?value=='Sites.ReadWrite.All'].id | [0]" -o tsv)
+
+az rest --method POST \
+  --uri "https://graph.microsoft.com/v1.0/servicePrincipals/<principalId>/appRoleAssignments" \
+  --body "{\"principalId\":\"<principalId>\",\"resourceId\":\"$SPO_SP\",\"appRoleId\":\"$ROLE_ID\"}"
 ```
+
+No certificate or client secret is created or rotated.
 
 ## Run locally
 
@@ -154,8 +164,6 @@ Set repository **Secrets**:
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
-- `SHAREPOINT_APP_CLIENT_ID`
-- `SHAREPOINT_APP_CLIENT_SECRET`
 
 Set repository **Variables**:
 
