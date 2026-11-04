@@ -19,7 +19,7 @@ Demos **1 and 5 bookend** the talk: Demo 1 poses the problem (a no-access user c
 
 ⭐ = the four "aha" moments: **D2** (managed identity, no secret) · **D3** (the origin spoof) · **D4** (the wrong-audience 401) · **D5** (app-only elevation — perms don't matter).
 
-> **Slide alignment:** this script was restructured from a 10-demo outline into these 5. Slide numbers are intentionally **not** referenced per-demo anymore — re-map the deck to these five sections before presenting. The still-true content gotchas (managed identity vs. cert/secret, combined handler) are preserved in the appendix at the bottom.
+> **Slide alignment:** the deck is [Azure-Functions.pptx](Azure-Functions.pptx) (37 slides). Its five **DEMO!** slides are where these demos run: **D1** = slide 9 (after *The Problem*), **D2** = slide 18 (after *App-Only Auth: Managed Identity*), **D3** = slide 23 (after *Origin Validation Middleware*), **D4** = slide 28 (after *Token Validation*), **D5** = slide 33 (after *Side-by-Side*). The deck's roadmap keeps six sections; section 06 (*Deploy & Harden*) has no demo.
 
 ---
 
@@ -247,7 +247,7 @@ Running long is the default failure mode. Trim **within** demos rather than drop
 
 ## Appendix — slide/code alignment notes (still true)
 
-These gotchas survive the restructure; keep them in mind when you re-map the deck.
+The deck now matches the code on these points. They are kept here as the canonical wording in case a slide is edited again.
 
 1. **App-only auth uses the Function's *managed identity*, not a certificate or a client secret.** Any slide that says "generate a client secret" or "upload a certificate" should say **"grant the Function's managed identity `Sites.ReadWrite.All`"** (README command, one time). SharePoint REST rejects secret-based app-only tokens (`401 Unsupported app only token`); that history is why we moved away from them. The shape in the repo:
    ```ts
