@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { HttpRequest } from '@azure/functions';
-
-const { resolveTarget } = await import('../src/functions/helpers.js');
+import { resolveTarget, dispatchCrudOperation } from '../src/functions/helpers.js';
+import { HttpError } from '../src/httpError.js';
 
 function fakeRequest({
   query = {},
@@ -45,4 +45,30 @@ test('resolveTarget falls back to the query string', () => {
 
 test('resolveTarget throws when siteUrl or listTitle is missing', () => {
   assert.throws(() => resolveTarget(fakeRequest(), {}), /siteUrl and listTitle are required/);
+});
+
+test('resolveTarget rejects a non-numeric itemId with 400', () => {
+  assert.throws(
+    () =>
+      resolveTarget(fakeRequest({ params: { itemId: 'abc' } }), {
+        siteUrl: 'https://contoso.sharepoint.com/sites/hr',
+        listTitle: 'Requests'
+      }),
+    (error: unknown) => error instanceof HttpError && error.status === 400
+  );
+});
+
+test('dispatchCrudOperation rejects a malformed JSON body with 400', async () => {
+  const request = {
+    method: 'POST',
+    query: new URLSearchParams(),
+    params: {},
+    json: async () => {
+      throw new SyntaxError('Unexpected token');
+    }
+  } as unknown as HttpRequest;
+
+  await assert.rejects(dispatchCrudOperation(request), (error: unknown) => {
+    return error instanceof HttpError && error.status === 400;
+  });
 });
