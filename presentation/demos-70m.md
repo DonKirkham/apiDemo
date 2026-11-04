@@ -114,20 +114,21 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
 4. **Configuration → App settings:** show the env vars the code reads (`AZURE_TENANT_ID`, `SHAREPOINT_RESOURCE`, `ALLOWED_CALLER_DOMAINS`, `ENTRA_AUDIENCE`, …). Then point at what's **missing**: no client ID, no client secret, no certificate PEM. "Nothing to rotate, nothing to leak into a setting."
 5. **Identity — the new bit:** **Settings → Identity → System assigned: On.** Copy the **Object (principal) ID**. "This is the Function's own identity. Azure issues its tokens at runtime; the code never holds a credential."
 6. **The grant:** **Enterprise applications** → search the Object ID → **Permissions**: `Sites.ReadWrite.All` (Application), admin-consented. "The Portal can't add this one, so it's a one-time CLI step ([README](../README.md#app-registration-permissions)). If it's missing, every SharePoint call fails, however correct the code is." Show the terminal output of the grant if you pre-ran it.
+   - **Be honest about scope:** `Sites.ReadWrite.All` is tenant-wide, so this identity can write to every site in the tenant. `Sites.Selected` limits an app to chosen sites. This repo does not use it yet. Say so rather than presenting the grant as least-privilege.
 7. **App Insights → Live Metrics:** fire a request, watch it appear.
 8. **CORS:** show the allowed-origins list — SharePoint domains only, **no `*`**. "This is the *browser* preflight, separate from the app's own origin check we'll see in D3."
 9. **How it got here (IaC):** flip to [main.bicep](../infra/main.bicep) + the split workflows — [infra.yml](../.github/workflows/infra.yml) (manual provision) vs [deploy.yml](../.github/workflows/deploy.yml) (push-triggered, build+test gated). Call out the **`remote-build` / `--build remote`** requirement: `.funcignore` excludes `node_modules` and **Flex Consumption doesn't support `SCM_DO_BUILD_DURING_DEPLOYMENT`**, so the build is requested server-side at deploy time. Skip it → zero functions registered → everything 404s. The #1 first-deploy trap.
-   - **Second trap:** Oryx installs *production* dependencies only, so `typescript` must be in `dependencies`, not `devDependencies`, or the remote build fails with `tsc: not found`. And `respect-funcignore: true` keeps the CI runner's local `node_modules` out of the zip.
+   - **Second trap (verify before you present):** `typescript` is listed in `dependencies`, not `devDependencies`, so it is installed on the server. The `tsc: not found` failure this implies has not been reproduced. Confirm it with a remote build before using it as a stage claim. `respect-funcignore: true` keeps the CI runner's local `node_modules` out of the zip.
 
 ## Part B — the SharePoint code (VS Code, ~8 min)
 
-**Pre-state:** [src/sharepointClient.ts](../src/sharepointClient.ts) open; [helpers.ts](../src/functions/helpers.ts) in a split. Optional: a breakpoint on the `switch (method)` in `dispatchCrudOperation` ([helpers.ts:69](../src/functions/helpers.ts#L69)).
+**Pre-state:** [src/sharepointClient.ts](../src/sharepointClient.ts) open; [helpers.ts](../src/functions/helpers.ts) in a split. Optional: a breakpoint on the `switch (method)` in `dispatchCrudOperation` ([helpers.ts:86](../src/functions/helpers.ts#L86)).
 
 **Steps**
-1. **`getSp()`** ([sharepointClient.ts:31](../src/sharepointClient.ts#L31)): `spfi(siteUrl).using(SPDefault(), AzureIdentity(getCredential(), [sharePointResource]))`. "This is the *exact* `spfi().using(...)` shape you'd write in a web part — the only difference in Node is *which* credential I hand it." Note the per-site SPFI cache.
+1. **`getSp()`** ([sharepointClient.ts:31](../src/sharepointClient.ts#L31)): `spfi(siteUrl).using(SPDefault(), AzureIdentity(getCredential(), [sharePointResource]))`. "This is the *exact* `spfi().using(...)` shape you'd write in a web part — the only difference in Node is *which* credential I hand it." Note the per-site SPFI cache. Before the cache, `getSp` checks that the site URL is on a `*.sharepoint.com` host. In any-site mode the caller supplies the URL, and the token must never go to another host.
 2. **`getCredential()`** ([sharepointClient.ts:18](../src/sharepointClient.ts#L18)): `new ManagedIdentityCredential()`. No tenant, no client ID, no secret. "Azure hands the Function a token for its own identity. `AZURE_CLIENT_ID` is only there if we ever move to a user-assigned identity."
 3. **The history ⭐:** "This file used to pick between a certificate and a client secret. The secret path got a token, but SharePoint rejected it with `401 Unsupported app only token`. That's why we used a cert. Now there's nothing to choose — the identity *is* the credential."
-4. **The shared pipeline:** in [helpers.ts](../src/functions/helpers.ts), show `registerCrudRoutes(prefix, authorize)` ([helpers.ts:135](../src/functions/helpers.ts#L135)) → route `{prefix}/{itemId?}`, methods `GET/POST/PATCH/DELETE`, and `dispatchCrudOperation` ([helpers.ts:69](../src/functions/helpers.ts#L69)) switching the **HTTP method → CRUD action**. "One combined handler per tier. No action words in the URL. Both endpoints share this — auth is the only thing that differs." Note `runWithErrorHandling` (config preflight → 500, central error→status) and `resolveTarget` (locked-down `SHAREPOINT_SITE_URL`/`LIST_TITLE` vs. caller-supplied site/list).
+4. **The shared pipeline:** in [helpers.ts](../src/functions/helpers.ts), show `registerCrudRoutes(prefix, authorize)` ([helpers.ts:144](../src/functions/helpers.ts#L144)) → route `{prefix}/{itemId?}`, methods `GET/POST/PATCH/DELETE`, and `dispatchCrudOperation` ([helpers.ts:86](../src/functions/helpers.ts#L86)) switching the **HTTP method → CRUD action**. "One combined handler per tier. No action words in the URL. Both endpoints share this — auth is the only thing that differs." Note `runWithErrorHandling` (config preflight → 500, central error→status) and `resolveTarget` (locked-down `SHAREPOINT_SITE_URL`/`LIST_TITLE` vs. caller-supplied site/list).
 5. The CRUD call site: `getSp(siteUrl).web.lists.getByTitle(listTitle).items.add(fields)` — "identical to a web part." Mention `update` is a MERGE with `IF-MATCH: *` (last-write-wins).
 
 **Say:** "In the browser, PnPjs gets its identity from the page context. In a Function there's no user, so I give it an app identity explicitly — the Function's own managed identity, with `Sites.ReadWrite.All` granted once. Same API, and nothing secret to manage."
@@ -150,10 +151,11 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
 
 **Steps**
 1. Show the wiring: [domainRestricted.ts](../src/functions/domainRestricted.ts) is just `registerCrudRoutes('domain', (req) => { ensureAllowedDomain(req); return { mode: 'domain-restricted' }; })`. "Same shared handler from D2; the authorizer is the only new thing."
-2. Read `ensureAllowedDomain` ([domainRestriction.ts:23](../src/security/domainRestriction.ts#L23)): pulls `origin`, falls back to `referer`'s origin, 403s if not in `ALLOWED_CALLER_DOMAINS`.
+2. Read `ensureAllowedDomain` ([domainRestriction.ts:27](../src/security/domainRestriction.ts#L27)): pulls `origin`, falls back to `referer`'s origin, 403s if not in `ALLOWED_CALLER_DOMAINS`.
 3. Run (a) → `200` + data. Run (b) no origin → **403** "Request origin or referer is required." Run (c) wrong origin → **403** "Caller domain is not allowed."
 4. **The honest catch ⭐:** run (d) — `curl`/Postman with a hand-added `Origin: https://pdslabs2.sharepoint.com` → **200**. "A browser *cannot* lie about Origin. `curl` can. So this stops casual cross-origin calls and random scanners — not a determined client. That's why Tier 1 is for low-risk reads only."
-5. (Optional, offline) `npm test` → [domainRestriction.test.ts](../tests/domainRestriction.test.ts) codifies the allow / reject / referer-fallback cases.
+5. (Optional) `POST /api/domain` with a body that is not JSON (e.g. `{bad`) → **400** "Request body must be valid JSON." Previously this returned a 500.
+6. (Optional, offline) `npm test` → [domainRestriction.test.ts](../tests/domainRestriction.test.ts) codifies the allow / reject / referer-fallback cases.
 
 **Say:** "Zero friction for a real SPFx web part — the browser sends Origin for free. Zero identity guarantee for anything else. Know which one you're buying."
 
@@ -190,8 +192,8 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
    - **`aud`** — your API's App ID URI. *A Microsoft Graph token will not pass.*
    - **`azp` / `appid`** — your SPFx client app.
    - **`scp`** — the scope you required.
-3. Map each to `validateEntraToken` ([entraAuth.ts:55](../src/security/entraAuth.ts#L55)): `jwt.verify` enforces `algorithms: ['RS256']`, `audience`, `issuer`; the signing key comes from **JWKS** via `jwks-rsa` (cached, [entraAuth.ts:15](../src/security/entraAuth.ts#L15)); then `ensureAllowedClientApplication` ([entraAuth.ts:44](../src/security/entraAuth.ts#L44)) enforces the optional `azp`/`appid` allow-list (`ALLOWED_CLIENT_APP_IDS`).
-4. **The reject ⭐:** fire `GET /api/entra` with the wrong-`aud` token → **401 "Invalid token: …"**. "Right signature, real Entra token — wrong audience. Rejected. That one check kills a whole class of token-replay attacks." Then a **missing** token → 401 "Authorization bearer token is required" ([entraAuth.ts:58](../src/security/entraAuth.ts#L58)).
+3. Map each to `validateEntraToken` ([entraAuth.ts:64](../src/security/entraAuth.ts#L64)): `jwt.verify` enforces `algorithms: ['RS256']`, `audience`, `issuer`; the signing key comes from **JWKS** via `jwks-rsa` (cached, [entraAuth.ts:12](../src/security/entraAuth.ts#L12)); then `ensureAllowedClientApplication` ([entraAuth.ts:53](../src/security/entraAuth.ts#L53)) enforces the optional `azp`/`appid` allow-list (`ALLOWED_CLIENT_APP_IDS`).
+4. **The reject ⭐:** fire `GET /api/entra` with the wrong-`aud` token → **401 "Invalid token: …"**. "Right signature, real Entra token — wrong audience. Rejected. That one check kills a whole class of token-replay attacks." Then a **missing** token → 401 "Authorization bearer token is required" ([entraAuth.ts:67](../src/security/entraAuth.ts#L67)).
 
 **Say:** "Validation isn't 'is there a token.' It's: signed by my tenant's keys, minted *for me*, by an app *I* allow, carrying the scope I need. Four claims, four checks, ~50 lines."
 
@@ -207,7 +209,7 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
 
 **Goal:** close the loop from Demo 1. The **same three users** now read and write the list through the Function — because the Function, not the user, holds the permission.
 
-**Pre-state:** the dataDemo web part deployed to the `pdslabs2` site. The three browser profiles (**Owner**, **Reader**, **Outsider**) from D1 still signed in. The companion SPFx repo open in a second VS Code window.
+**Pre-state:** the dataDemo web part deployed to the `pdslabs2` site. The three browser profiles (**Owner**, **Reader**, **Outsider**) from D1 still signed in. The companion SPFx repo open in a second VS Code window. **The live app runs in any-site mode:** `infra/main.bicep` does not set `SHAREPOINT_SITE_URL` or `SHAREPOINT_LIST_TITLE`, so the caller chooses the site and list. Say so here, or pin those app settings before the talk.
 
 **Steps**
 1. **The code (brief):** show how the web part talks to the Function. `ServiceFactory.createSpService` branches by transport and endpoint:
@@ -221,7 +223,7 @@ All five are core. If you fall behind, **shorten** D2's Azure-tour and D4's port
    - **Outsider** → the same. "Remember Demo 1? This account couldn't even *see* the list. Through the Function, they just added an event." Refresh the list as **Owner** to prove the row is really there.
 3. Toggle the **SPFx ↔ PnPjs** transport for one of them to show the result is identical regardless of how the call is made.
 
-**Say:** "This is the whole talk in one screen. The user's own permission on the list is now irrelevant to what the *action* is allowed to do — because the action runs with the Function's identity, gated by the tier we chose. Tier 1 trusts the origin; Tier 2 trusts a validated token. Either way, the elevation is centralized, auditable, and out of the browser."
+**Say:** "This is the whole talk in one screen. The user's own permission on the list is now irrelevant to what the *action* is allowed to do — because the action runs with the Function's identity, gated by the tier we chose. Tier 1 trusts the origin; Tier 2 trusts a validated token. Either way, the elevation is centralized, auditable, and out of the browser. The trade-off: the Function enforces no per-user permission, so the Reader's read-only restriction is not enforced anywhere in this path."
 
 **Aha:** the **Outsider writing a row**. That's Demo 1's denied user, now succeeding — the problem visibly solved.
 
@@ -249,6 +251,7 @@ These gotchas survive the restructure; keep them in mind when you re-map the dec
 
 1. **App-only auth uses the Function's *managed identity*, not a certificate or a client secret.** Any slide that says "generate a client secret" or "upload a certificate" should say **"grant the Function's managed identity `Sites.ReadWrite.All`"** (README command, one time). SharePoint REST rejects secret-based app-only tokens (`401 Unsupported app only token`); that history is why we moved away from them. The shape in the repo:
    ```ts
+   // Simplified. The repo also rejects site URLs that are not on *.sharepoint.com.
    import { spfi } from "@pnp/sp";
    import { SPDefault } from "@pnp/nodejs";
    import { AzureIdentity } from "@pnp/azidjsclient";
@@ -260,6 +263,6 @@ These gotchas survive the restructure; keep them in mind when you re-map the dec
    ```
    This is the D2 reveal.
 
-2. **One combined handler per tier — no action words in the URL.** The repo uses `/api/{tier}/{itemId?}` with `methods: ['GET','POST','PATCH','DELETE']`, and the **HTTP method maps to the CRUD action** inside `dispatchCrudOperation` ([helpers.ts:69](../src/functions/helpers.ts#L69)). Both tiers are wired by one shared `registerCrudRoutes(prefix, authorize)` ([helpers.ts:135](../src/functions/helpers.ts#L135)). If the deck shows a separate-function-per-verb diagram, drop it in favor of the combined-handler one.
+2. **One combined handler per tier — no action words in the URL.** The repo uses `/api/{tier}/{itemId?}` with `methods: ['GET','POST','PATCH','DELETE']`, and the **HTTP method maps to the CRUD action** inside `dispatchCrudOperation` ([helpers.ts:86](../src/functions/helpers.ts#L86)). Both tiers are wired by one shared `registerCrudRoutes(prefix, authorize)` ([helpers.ts:144](../src/functions/helpers.ts#L144)). If the deck shows a separate-function-per-verb diagram, drop it in favor of the combined-handler one.
 
 3. **`@azure/identity` credential via the PnPjs `AzureIdentity` behavior** — if a slide mentions "AzureIdentityFetchClient or MSAL," simplify it to this, which is what the code uses.
