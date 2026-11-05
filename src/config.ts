@@ -14,9 +14,6 @@ export function parseCsv(value: string | undefined): string[] {
 export const allowedCallerDomains = parseCsv(process.env.ALLOWED_CALLER_DOMAINS);
 export const allowedClientAppIds = parseCsv(process.env.ALLOWED_CLIENT_APP_IDS);
 export const tenantId = process.env.AZURE_TENANT_ID;
-// Optional: client id of a user-assigned managed identity. Leave unset to use the
-// Function App's system-assigned identity.
-export const managedIdentityClientId = process.env.AZURE_CLIENT_ID || undefined;
 export const sharePointResource = process.env.SHAREPOINT_RESOURCE;
 // When set, these pin every request to a single site/list and the
 // client-supplied siteUrl/listTitle are ignored (locked-down mode). Leave

@@ -5,7 +5,7 @@ import '@pnp/sp/items/index.js';
 import { SPDefault } from '@pnp/nodejs';
 import { AzureIdentity } from '@pnp/azidjsclient';
 import { ManagedIdentityCredential } from '@azure/identity';
-import { managedIdentityClientId, sharePointResource } from './config.js';
+import { sharePointResource } from './config.js';
 import { HttpError } from './httpError.js';
 
 let cachedCredential: ManagedIdentityCredential | undefined;
@@ -17,9 +17,7 @@ const spCache = new Map<string, SPFI>();
 // (e.g. Sites.ReadWrite.All), granted once with admin consent; see README.
 function getCredential(): ManagedIdentityCredential {
   if (!cachedCredential) {
-    cachedCredential = managedIdentityClientId
-      ? new ManagedIdentityCredential({ clientId: managedIdentityClientId })
-      : new ManagedIdentityCredential();
+    cachedCredential = new ManagedIdentityCredential();
   }
   return cachedCredential;
 }
