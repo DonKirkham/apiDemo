@@ -84,7 +84,6 @@ Set these app settings locally (`local.settings.json`) or in Azure:
 - `ALLOWED_CLIENT_APP_IDS` (optional comma-separated app IDs)
 - `ENTRA_ISSUER` and `ENTRA_JWKS_URI` (optional overrides). By default both are
   derived from `AZURE_TENANT_ID`, so you normally don't set them.
-- `AZURE_CLIENT_ID` (optional — client id of a user-assigned managed identity; leave unset for the system-assigned identity)
 
 `local.settings.sample.json` is included as a template.
 
